@@ -6,9 +6,10 @@ from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 urlpatterns = [
     # Django admin
     path("admin/", admin.site.urls),
-    # Auth (login / logout)
+    # Auth (login / logout / signup)
     path("accounts/login/", auth_views.LoginView.as_view(template_name="messaging/login.html"), name="login"),
-    path("accounts/logout/", auth_views.LogoutView.as_view(next_page="/chat/"), name="logout"),
+    path("accounts/logout/", auth_views.LogoutView.as_view(next_page="/accounts/login/"), name="logout"),
+    path("accounts/", include("accounts.urls")),
     # Chat platform
     path("chat/", include("messaging.urls")),
     # REST API

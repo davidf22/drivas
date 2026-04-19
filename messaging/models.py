@@ -71,6 +71,8 @@ class ChatMessage(models.Model):
     )
     role = models.CharField(max_length=15, choices=Role.choices)
     body = models.TextField()
+    # Set on job-offer notifications so the UI can show Accept/Decline buttons
+    job_offer_id = models.IntegerField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

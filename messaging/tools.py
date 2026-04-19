@@ -28,8 +28,8 @@ TOOLS = [
         "name": "register_client",
         "description": (
             "Register a new person as a client in Drivas. "
-            "Collect their first name, last name, and optionally email through conversation "
-            "BEFORE calling this. Confirm the details with the user first."
+            "Collect their first name, last name, and email through conversation "
+            "BEFORE calling this. Email is required for clients. Confirm the details with the user first."
         ),
         "input_schema": {
             "type": "object",
@@ -38,10 +38,10 @@ TOOLS = [
                 "last_name": {"type": "string"},
                 "email": {
                     "type": "string",
-                    "description": "Optional email address.",
+                    "description": "Client's email address (required).",
                 },
             },
-            "required": ["first_name", "last_name"],
+            "required": ["first_name", "last_name", "email"],
         },
     },
     {
@@ -49,7 +49,8 @@ TOOLS = [
         "description": (
             "Register a new driver in Drivas. "
             "Drivers do NOT bring their own vehicle — they drive the client's car. "
-            "Collect first name, last name, and driver's license number through conversation. "
+            "Collect first name, last name, email address, and driver's license number through conversation. "
+            "Email is required so the driver can receive job notifications. "
             "Confirm the details before calling this tool."
         ),
         "input_schema": {
@@ -57,16 +58,16 @@ TOOLS = [
             "properties": {
                 "first_name": {"type": "string"},
                 "last_name": {"type": "string"},
+                "email": {
+                    "type": "string",
+                    "description": "Driver's email address (required for job notifications).",
+                },
                 "license_number": {
                     "type": "string",
                     "description": "Driver's official license number.",
                 },
-                "email": {
-                    "type": "string",
-                    "description": "Optional email address.",
-                },
             },
-            "required": ["first_name", "last_name", "license_number"],
+            "required": ["first_name", "last_name", "email", "license_number"],
         },
     },
     {
@@ -180,23 +181,6 @@ TOOLS = [
         },
     },
     {
-        "name": "set_driver_availability",
-        "description": (
-            "Set the current driver's availability. "
-            "Set available=true when ready to accept jobs, available=false when unavailable."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "available": {
-                    "type": "boolean",
-                    "description": "true = available for work, false = unavailable",
-                }
-            },
-            "required": ["available"],
-        },
-    },
-    {
         "name": "find_best_driver",
         "description": (
             "Find the best available verified drivers for a specific job based on rating. "
@@ -219,13 +203,18 @@ TOOLS = [
         "description": (
             "Send an in-app notification message to another registered user. "
             "Use this to notify drivers about new job openings or clients about driver acceptance. "
-            "The message will appear in their chat the next time they open it."
+            "The message will appear in their chat the next time they open it. "
+            "When notifying a driver about a job offer, pass job_id so they get Accept/Decline buttons."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "user_id": {"type": "integer"},
                 "message": {"type": "string"},
+                "job_id": {
+                    "type": "integer",
+                    "description": "Pass the job ID when this is a job offer notification to a driver.",
+                },
             },
             "required": ["user_id", "message"],
         },
@@ -248,7 +237,6 @@ def execute_tool(name: str, input_data: dict, context: dict) -> str:
         "cancel_job": _cancel_job,
         "get_job_info": _get_job_info,
         "get_my_jobs": _get_my_jobs,
-        "set_driver_availability": _set_driver_availability,
         "find_best_driver": _find_best_driver,
         "notify_user": _notify_user,
     }
@@ -287,6 +275,10 @@ def _register_client(data: dict, context: dict) -> str:
     first = data["first_name"].strip()
     last = data["last_name"].strip()
     email = data.get("email", "").strip()
+
+    if not email:
+        return "Error: email address is required to register as a client. Please ask the user for their email."
+
     password = _generate_password()
 
     username = _unique_username(f"{first.lower()}_{last.lower()}")
@@ -322,6 +314,10 @@ def _register_driver(data: dict, context: dict) -> str:
     last = data["last_name"].strip()
     license_number = data["license_number"].strip()
     email = data.get("email", "").strip()
+
+    if not email:
+        return "Error: email address is required to register as a driver. Please ask the user for their email."
+
     password = _generate_password()
 
     if DriverProfile.objects.filter(license_number=license_number).exists():
@@ -339,7 +335,7 @@ def _register_driver(data: dict, context: dict) -> str:
     DriverProfile.objects.create(
         user=user,
         license_number=license_number,
-        status="offline",
+        status="available",
         is_verified=False,
     )
     context["user"] = user
@@ -375,6 +371,9 @@ def _post_job(data: dict, context: dict) -> str:
     )
     JobStatusLog.objects.create(job=job, status=JobEngagement.Status.OPEN, changed_by=user)
 
+    # Email all available verified drivers
+    _email_available_drivers(job)
+
     rate_line = f"\nAgreed Rate: ${job.agreed_rate}/hr" if job.agreed_rate else ""
     return (
         f"Job #{job.id} posted successfully.\n"
@@ -405,6 +404,50 @@ def _get_open_jobs(data: dict, context: dict) -> str:
             + (f" | {j.requirements[:60]}" if j.requirements else "")
         )
     return "\n".join(lines)
+
+
+def _get_or_create_history(user):
+    """Get or create ConversationHistory for a user, keyed by user_{id}."""
+    from .models import ConversationHistory
+    session_key = f"user_{user.id}"
+    history = ConversationHistory.objects.filter(phone_number=session_key).first()
+    if history is None:
+        history = ConversationHistory.objects.filter(user=user).first()
+        if history:
+            history.phone_number = session_key
+            history.save(update_fields=["phone_number"])
+        else:
+            history = ConversationHistory.objects.create(phone_number=session_key, user=user)
+    if history.user is None:
+        history.user = user
+        history.save(update_fields=["user"])
+    return history, session_key
+
+
+def _notify_client_of_acceptance(job, driver) -> None:
+    """Push an in-chat notification to the client when a driver accepts their job."""
+    from .models import ChatMessage
+
+    client = job.client
+    message = (
+        f"Great news! A driver has accepted your job offer.\n"
+        f"{'─' * 30}\n"
+        f"Job #{job.id} — {job.get_employment_type_display()}\n"
+        f"Location:  {job.work_location}\n"
+        f"Driver:    {driver.get_full_name()}\n\n"
+        f"Your driver will be in touch shortly. You can chat here if you have any questions."
+    )
+
+    history, session_key = _get_or_create_history(client)
+    history.append_assistant(message)
+    history.save()
+
+    ChatMessage.objects.create(
+        user=client,
+        session_key=session_key,
+        role=ChatMessage.Role.ASSISTANT,
+        body=message,
+    )
 
 
 def _accept_job(data: dict, context: dict) -> str:
@@ -439,13 +482,16 @@ def _accept_job(data: dict, context: dict) -> str:
     profile.save()
     JobStatusLog.objects.create(job=job, status=JobEngagement.Status.HIRED, changed_by=user)
 
+    # Notify the client in their chat
+    _notify_client_of_acceptance(job, user)
+
     return (
         f"Job #{job.id} accepted!\n"
         f"Client:       {job.client.get_full_name()}\n"
         f"Location:     {job.work_location}\n"
         f"Type:         {job.get_employment_type_display()}\n"
         f"Requirements: {job.requirements or 'None'}\n"
-        f"Client has been notified."
+        f"The client has been notified."
     )
 
 
@@ -596,26 +642,6 @@ def _get_my_jobs(data: dict, context: dict) -> str:
     return "\n".join(lines)
 
 
-def _set_driver_availability(data: dict, context: dict) -> str:
-    from accounts.models import DriverProfile
-
-    user = context.get("user")
-    if not user or user.role != "driver":
-        return "Error: only drivers can change availability."
-
-    profile = DriverProfile.objects.filter(user=user).first()
-    if not profile:
-        return "Error: driver profile not found."
-
-    if not profile.is_verified:
-        return "Error: your account is pending verification. Contact support."
-
-    profile.status = "available" if data["available"] else "offline"
-    profile.save()
-    label = "Available (you will receive job offers)" if data["available"] else "Offline"
-    return f"Your status is now: {label}"
-
-
 def _find_best_driver(data: dict, context: dict) -> str:
     from accounts.models import DriverProfile
     from jobs.models import JobEngagement
@@ -644,6 +670,43 @@ def _find_best_driver(data: dict, context: dict) -> str:
     return "\n".join(lines)
 
 
+def _email_available_drivers(job) -> None:
+    """Send job notification emails and in-chat notifications to all available verified drivers."""
+    from accounts.models import DriverProfile
+    from .email_utils import send_job_notification_email
+    from .models import ConversationHistory, ChatMessage
+
+    rate_line = f"\nRate:         ${job.agreed_rate}/hr" if job.agreed_rate else ""
+    message = (
+        f"New job available! Job #{job.id}\n"
+        f"{'─' * 24}\n"
+        f"Type:         {job.get_employment_type_display()}\n"
+        f"Location:     {job.work_location}{rate_line}\n"
+        f"Requirements: {job.requirements or 'None'}\n\n"
+        f"Would you like to accept this job?"
+    )
+
+    candidates = (
+        DriverProfile.objects.filter(status="available", is_verified=True)
+        .select_related("user")
+    )
+    for profile in candidates:
+        driver = profile.user
+        history, session_key = _get_or_create_history(driver)
+        history.append_assistant(message)
+        history.save()
+
+        ChatMessage.objects.create(
+            user=driver,
+            session_key=session_key,
+            role=ChatMessage.Role.ASSISTANT,
+            body=message,
+            job_offer_id=job.id,
+        )
+
+        send_job_notification_email(driver, job)
+
+
 def _notify_user(data: dict, context: dict) -> str:
     from accounts.models import CustomUser
     from .models import ConversationHistory, ChatMessage
@@ -654,22 +717,18 @@ def _notify_user(data: dict, context: dict) -> str:
         return f"Error: user ID {data['user_id']} not found."
 
     message = data["message"]
-    session_key = f"user_{recipient.id}"
+    job_id = data.get("job_id")
 
-    # Push into their conversation history so it appears next time they open chat
-    history, _ = ConversationHistory.objects.get_or_create(
-        phone_number=session_key,
-        defaults={"user": recipient},
-    )
+    history, session_key = _get_or_create_history(recipient)
     history.append_assistant(message)
     history.save()
 
-    # Also log as a ChatMessage
     ChatMessage.objects.create(
         user=recipient,
         session_key=session_key,
         role=ChatMessage.Role.ASSISTANT,
         body=message,
+        job_offer_id=job_id,
     )
 
     return f"Notification delivered to {recipient.get_full_name()} (user #{recipient.id})."

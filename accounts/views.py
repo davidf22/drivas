@@ -1,2 +1,1 @@
-# All user registration is done by operators via Django Admin.
-# No web-facing views are needed for this WhatsApp-first backend.
+# Registration is handled by the AI agent via chat or by operators via Django Admin.

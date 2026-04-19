@@ -35,14 +35,13 @@ class DriverProfile(models.Model):
     class Status(models.TextChoices):
         AVAILABLE = "available", "Available"
         BUSY = "busy", "Busy"
-        OFFLINE = "offline", "Offline"
 
     user = models.OneToOneField(
         CustomUser, on_delete=models.CASCADE, related_name="driver_profile"
     )
     license_number = models.CharField(max_length=50, unique=True)
     status = models.CharField(
-        max_length=10, choices=Status.choices, default=Status.OFFLINE
+        max_length=10, choices=Status.choices, default=Status.AVAILABLE
     )
     rating = models.DecimalField(max_digits=3, decimal_places=2, default=5.00)
     total_jobs = models.PositiveIntegerField(default=0)

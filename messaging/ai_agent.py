@@ -65,8 +65,9 @@ politely. For issues you cannot resolve, tell the user an operator will follow u
 
 ## Registration rules
 
-- For clients: collect first name and last name (and optionally email).
-- For drivers: collect first name, last name, and driver's license number. \
+- For clients: collect first name, last name, and email address (email is required).
+- For drivers: collect first name, last name, email address, and driver's license number. \
+  Email is required so they receive job notifications. \
   Drivers do NOT need to provide a vehicle — they drive the client's car. \
   Remind them their account needs operator verification before they can accept jobs.
 - After registering, tell the user their login username and password so they can log in later.
@@ -85,11 +86,11 @@ politely. For issues you cannot resolve, tell the user an operator will follow u
 
 ## Driver job flow
 
-- Driver says they are available → call set_driver_availability(available=true).
+- Drivers are automatically **Available** when they have no active job, and **Busy** when they do.
 - Driver asks for jobs → call get_open_jobs.
-- Driver accepts a job → call accept_job, then call notify_user to tell the client.
+- Driver accepts a job → call accept_job (status becomes Busy), then call notify_user to tell the client.
 - Driver starts the job → call start_job, then call notify_user to tell the client.
-- Driver ends the job → call end_job, then call notify_user to tell the client.
+- Driver ends the job → call end_job (status returns to Available), then call notify_user to tell the client.
 
 ## Important
 
@@ -127,7 +128,7 @@ def _build_user_context(user, session_key: str) -> str:
         profile = DriverProfile.objects.filter(user=user).first()
         if profile:
             lines += [
-                f"Availability: {profile.get_status_display()}",
+                f"Status: {profile.get_status_display()}",
                 f"Verified: {'Yes' if profile.is_verified else 'No (pending operator review)'}",
                 f"Rating: {profile.rating}",
                 f"Total Jobs: {profile.total_jobs}",
@@ -180,10 +181,19 @@ def run_agent(session_key: str, user, incoming_message: str) -> str:
     client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
 
     # ── Load / create conversation history ────────────────────────────────────
-    history_obj, _ = ConversationHistory.objects.get_or_create(
-        phone_number=session_key,
-        defaults={"user": user},
-    )
+    # Try by session key first; fall back to the user's existing record.
+    history_obj = ConversationHistory.objects.filter(phone_number=session_key).first()
+    if history_obj is None and user:
+        # Authenticated user may have an old record under a different key — reuse it.
+        history_obj = ConversationHistory.objects.filter(user=user).first()
+        if history_obj:
+            history_obj.phone_number = session_key
+            history_obj.save(update_fields=["phone_number"])
+    if history_obj is None:
+        history_obj = ConversationHistory.objects.create(
+            phone_number=session_key,
+            user=user,
+        )
     if user and history_obj.user is None:
         history_obj.user = user
         history_obj.save(update_fields=["user"])

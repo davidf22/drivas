@@ -54,6 +54,7 @@
       outline: none;
       transition: border-color .2s;
       margin-bottom: 18px;
+      font-family: inherit;
     }
     input:focus { border-color: #e94560; }
     .btn {
@@ -86,6 +87,7 @@
       line-height: 1.6;
     }
     .hint a { color: #e94560; text-decoration: none; }
+    .hint a:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
@@ -108,7 +110,7 @@
     <input type="text" id="id_username" name="username" autofocus autocomplete="username" />
     <label for="id_password">Password</label>
     <input type="password" id="id_password" name="password" autocomplete="current-password" />
-    <input type="hidden" name="next" value="{{ next }}" />
+    <input type="hidden" name="next" value="/chat/" />
     <button type="submit" class="btn">Sign In</button>
   </form>
 

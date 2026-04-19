@@ -44,6 +44,8 @@ def notify_drivers_of_new_job(self, job_id: int):
         f"Open your Drivas chat and type 'accept job {job.id}' to take this job."
     )
 
+    from .email_utils import send_job_notification_email
+
     for profile in available:
         driver = profile.user
         session_key = f"user_{driver.id}"
@@ -60,6 +62,9 @@ def notify_drivers_of_new_job(self, job_id: int):
                 session_key=session_key,
                 role=ChatMessage.Role.ASSISTANT,
                 body=message,
+                job_offer_id=job.id,
             )
+
+            send_job_notification_email(driver, job)
         except Exception as exc:
             logger.error("Failed to notify driver %s: %s", driver.id, exc)
