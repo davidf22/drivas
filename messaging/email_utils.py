@@ -27,7 +27,7 @@ def send_job_notification_email(driver, job):
         logger.debug("EMAIL_HOST_USER not configured — skipping email notification.")
         return
 
-    rate_line = f"\nRate:         ${job.agreed_rate}/hr" if job.agreed_rate else ""
+    rate_line = f"\nRate:         ${job.agreed_rate}/month" if job.agreed_rate else ""
     subject = f"Drivas — New Job Available: {job.get_employment_type_display()} in {job.work_location}"
     body = (
         f"Hi {driver.first_name or driver.username},\n\n"

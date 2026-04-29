@@ -34,7 +34,7 @@ def notify_drivers_of_new_job(self, job_id: int):
         logger.info("No available drivers for job %s", job_id)
         return
 
-    rate_line = f"\nRate:         ${job.agreed_rate}/hr" if job.agreed_rate else ""
+    rate_line = f"\nRate:         ${job.agreed_rate}/month" if job.agreed_rate else ""
     message = (
         f"New job available! Job #{job.id}\n"
         f"────────────────────────\n"

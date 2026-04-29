@@ -45,7 +45,7 @@ class JobEngagement(models.Model):
     )
     agreed_rate = models.DecimalField(
         max_digits=8, decimal_places=2, null=True, blank=True,
-        help_text="Agreed hourly or daily rate.",
+        help_text="Agreed monthly salary.",
     )
     total_earned = models.DecimalField(
         max_digits=8, decimal_places=2, null=True, blank=True,
@@ -66,6 +66,26 @@ class JobEngagement(models.Model):
             f"Job #{self.pk} [{self.status}] "
             f"{self.client} — {self.get_employment_type_display()} @ {self.work_location}"
         )
+
+
+class SalaryPayment(models.Model):
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        SUCCESS = "success", "Success"
+        FAILED  = "failed",  "Failed"
+
+    job       = models.ForeignKey(JobEngagement, on_delete=models.PROTECT, related_name="salary_payments")
+    amount    = models.DecimalField(max_digits=10, decimal_places=2, help_text="Amount in NGN")
+    reference = models.CharField(max_length=100, unique=True)
+    status    = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
+    paid_at   = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"Payment #{self.pk} | Job #{self.job_id} | ₦{self.amount} [{self.status}]"
 
 
 class JobStatusLog(models.Model):

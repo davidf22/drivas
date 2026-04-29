@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Drivas — Payment {{ payment.get_status_display }}</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f0f2f5;
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      background: #1a1a2e;
+      color: #fff;
+      padding: 14px 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      box-shadow: 0 2px 8px rgba(0,0,0,.3);
+    }
+    header .logo {
+      width: 36px; height: 36px;
+      background: #e94560;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 800; font-size: 16px;
+    }
+    header h1 { font-size: 18px; font-weight: 700; }
+    header p  { font-size: 12px; color: #aaa; margin-top: 1px; }
+
+    .container {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 32px 16px;
+    }
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 4px 20px rgba(0,0,0,.08);
+      padding: 40px 36px;
+      width: 100%;
+      max-width: 440px;
+      text-align: center;
+    }
+
+    .status-icon { font-size: 56px; margin-bottom: 16px; }
+    .card h2 { font-size: 22px; color: #1a1a2e; margin-bottom: 8px; }
+    .card p  { font-size: 14px; color: #555; line-height: 1.6; margin-bottom: 6px; }
+
+    .receipt {
+      background: #f9f9f9;
+      border-radius: 10px;
+      padding: 18px;
+      margin: 24px 0;
+      text-align: left;
+    }
+    .receipt-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 13px;
+      padding: 5px 0;
+      color: #444;
+    }
+    .receipt-row span:first-child { color: #888; }
+    .receipt-row span:last-child  { font-weight: 600; color: #1a1a2e; }
+
+    .alert { padding: 12px 16px; border-radius: 10px; font-size: 13px; margin-bottom: 18px; }
+    .alert.error { background: #fdecea; color: #c62828; }
+
+    .btn {
+      display: inline-block;
+      padding: 12px 28px;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 600;
+      text-decoration: none;
+      transition: background .2s;
+    }
+    .btn-primary { background: #e94560; color: #fff; }
+    .btn-primary:hover { background: #c73652; }
+    .btn-secondary { background: #f0f0f0; color: #333; margin-left: 10px; }
+    .btn-secondary:hover { background: #e0e0e0; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">D</div>
+  <div>
+    <h1>Drivas</h1>
+    <p>Payment Result</p>
+  </div>
+</header>
+
+<div class="container">
+  <div class="card">
+    {% if payment.status == "success" %}
+      <div class="status-icon">✅</div>
+      <h2>Payment Successful!</h2>
+      <p>Your salary payment to <strong>{{ job.driver.get_full_name }}</strong> has been processed.</p>
+      <p>The driver has been notified via chat and email.</p>
+
+      <div class="receipt">
+        <div class="receipt-row"><span>Amount</span><span>₦{{ payment.amount|floatformat:2 }}</span></div>
+        <div class="receipt-row"><span>Driver</span><span>{{ job.driver.get_full_name }}</span></div>
+        <div class="receipt-row"><span>Job</span><span>#{{ job.id }}</span></div>
+        <div class="receipt-row"><span>Reference</span><span>{{ payment.reference }}</span></div>
+        <div class="receipt-row"><span>Date</span><span>{{ payment.paid_at|date:"M d, Y H:i" }} UTC</span></div>
+      </div>
+
+    {% elif payment.status == "failed" %}
+      <div class="status-icon">❌</div>
+      <h2>Payment Failed</h2>
+      <p>Your payment could not be completed. No money was charged.</p>
+      {% if error %}
+        <div class="alert error">{{ error }}</div>
+      {% endif %}
+      <p style="margin-top:12px;">Please try again or contact support at fayankindavid@gmail.com.</p>
+      <div style="margin-top:28px;">
+        <a href="/chat/pay/{{ job.id }}/" class="btn btn-primary">Try Again</a>
+        <a href="/chat/" class="btn btn-secondary">Back to Chat</a>
+      </div>
+
+    {% else %}
+      <div class="status-icon">⏳</div>
+      <h2>Payment Pending</h2>
+      <p>Your payment is being processed. You will be notified in chat once it's confirmed.</p>
+    {% endif %}
+
+    {% if payment.status == "success" %}
+    <div style="margin-top:16px;">
+      <a href="/chat/" class="btn btn-primary">Back to Chat</a>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+</body>
+</html>

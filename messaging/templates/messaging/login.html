@@ -110,7 +110,7 @@
     <input type="text" id="id_username" name="username" autofocus autocomplete="username" />
     <label for="id_password">Password</label>
     <input type="password" id="id_password" name="password" autocomplete="current-password" />
-    <input type="hidden" name="next" value="/chat/" />
+    <input type="hidden" name="next" value="{{ request.GET.next|default:'/chat/' }}" />
     <button type="submit" class="btn">Sign In</button>
   </form>
 

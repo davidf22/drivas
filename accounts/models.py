@@ -40,6 +40,7 @@ class DriverProfile(models.Model):
         CustomUser, on_delete=models.CASCADE, related_name="driver_profile"
     )
     license_number = models.CharField(max_length=50, unique=True)
+    license_image = models.ImageField(upload_to="licenses/", null=True, blank=True)
     status = models.CharField(
         max_length=10, choices=Status.choices, default=Status.AVAILABLE
     )

@@ -58,9 +58,11 @@
       display: flex;
       align-items: flex-end;
       gap: 8px;
+      max-width: 100%;
     }
     .bubble-row.user   { flex-direction: row-reverse; }
     .bubble-row.assistant { flex-direction: row; }
+    .bubble-row > div:last-child { min-width: 0; flex-shrink: 1; }
 
     .avatar {
       width: 32px; height: 32px; border-radius: 50%;
@@ -74,10 +76,12 @@
       max-width: min(72%, 560px);
       padding: 10px 14px;
       border-radius: 18px;
-      line-height: 1.5;
+      line-height: 1.6;
       font-size: 14px;
       white-space: pre-wrap;
       word-break: break-word;
+      overflow-wrap: anywhere;
+      min-width: 48px;
     }
     .bubble-row.user      .bubble { background: #e94560; color: #fff; border-bottom-right-radius: 4px; }
     .bubble-row.assistant .bubble { background: #fff;    color: #1a1a2e; border-bottom-left-radius: 4px; box-shadow: 0 1px 4px rgba(0,0,0,.1); }
@@ -217,7 +221,7 @@
   </div>
 </header>
 
-<div id="chat-window">
+<div id="chat-window" data-last-time="{{ last_message_time }}">
   {% if not chat_messages %}
   <div id="empty-state">
     <div class="icon">💬</div>
@@ -288,8 +292,9 @@
     return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
 
-  function appendBubble(role, text) {
-    if (emptyState) emptyState.remove();
+  function appendBubble(role, text, timeStr, jobOfferId) {
+    const emptyEl = document.getElementById('empty-state');
+    if (emptyEl) emptyEl.remove();
 
     const row = document.createElement('div');
     row.className = `bubble-row ${role}`;
@@ -304,12 +309,24 @@
     bubble.className = 'bubble';
     bubble.textContent = text;
 
-    const time = document.createElement('div');
-    time.className = 'bubble-time';
-    time.textContent = now();
-
     wrap.appendChild(bubble);
-    wrap.appendChild(time);
+
+    if (jobOfferId) {
+      const actions = document.createElement('div');
+      actions.className = 'job-actions';
+      actions.id = `job-actions-${jobOfferId}`;
+      actions.innerHTML = `
+        <button class="job-btn accept" onclick="handleJobAction(${jobOfferId}, 'accept')">✓ Accept</button>
+        <button class="job-btn decline" onclick="handleJobAction(${jobOfferId}, 'decline')">✗ Decline</button>
+      `;
+      wrap.appendChild(actions);
+    }
+
+    const timeEl = document.createElement('div');
+    timeEl.className = 'bubble-time';
+    timeEl.textContent = timeStr || now();
+
+    wrap.appendChild(timeEl);
     row.appendChild(avatar);
     row.appendChild(wrap);
 
@@ -385,6 +402,40 @@
   // Scroll to bottom on load
   scrollToBottom();
   input.focus();
+
+  // ── Server-push polling ──────────────────────────────────
+  // Track the timestamp of the last message rendered on page load
+  let lastMessageTime = null;
+  const initialBubbles = chatWindow.querySelectorAll('.bubble-row');
+  if (initialBubbles.length) {
+    // The last bubble-row before #typing carries the most recent timestamp
+    const times = chatWindow.querySelectorAll('.bubble-time');
+    // We'll use ISO timestamps from the server instead — seed from data attribute below
+  }
+
+  // We rely on the server to tell us the latest timestamp via a data attribute
+  // set on the chat window when the page loads.
+  lastMessageTime = chatWindow.dataset.lastTime || null;
+
+  async function pollForNewMessages() {
+    try {
+      const url = '{% url "messaging:poll_messages" %}' +
+        (lastMessageTime ? '?after=' + encodeURIComponent(lastMessageTime) : '');
+      const res = await fetch(url);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.messages && data.messages.length) {
+        data.messages.forEach(msg => {
+          appendBubble(msg.role, msg.body, msg.time, msg.job_offer_id);
+          lastMessageTime = msg.created_at;
+        });
+        scrollToBottom();
+      }
+    } catch (e) { /* network hiccup — silently retry */ }
+  }
+
+  // Poll every 4 seconds
+  setInterval(pollForNewMessages, 4000);
 </script>
 
 </body>

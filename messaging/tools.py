@@ -49,15 +49,18 @@ TOOLS = [
         "description": (
             "Register a new driver in Drivas. "
             "Drivers do NOT bring their own vehicle — they drive the client's car. "
-            "Collect first name, last name, email address, and driver's license number through conversation. "
-            "Email is required so the driver can receive job notifications. "
-            "Confirm the details before calling this tool."
+            "Collect first name, last name, phone number, email address, and driver's license number through conversation. "
+            "All fields are required. Confirm the details before calling this tool."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "first_name": {"type": "string"},
                 "last_name": {"type": "string"},
+                "phone_number": {
+                    "type": "string",
+                    "description": "Driver's phone number (e.g. +2348012345678). Shared with clients after job acceptance.",
+                },
                 "email": {
                     "type": "string",
                     "description": "Driver's email address (required for job notifications).",
@@ -67,7 +70,7 @@ TOOLS = [
                     "description": "Driver's official license number.",
                 },
             },
-            "required": ["first_name", "last_name", "email", "license_number"],
+            "required": ["first_name", "last_name", "phone_number", "email", "license_number"],
         },
     },
     {
@@ -95,7 +98,7 @@ TOOLS = [
                 },
                 "agreed_rate": {
                     "type": "number",
-                    "description": "Agreed hourly or daily rate (optional).",
+                    "description": "Agreed monthly salary (optional).",
                 },
             },
             "required": ["work_location", "employment_type"],
@@ -314,9 +317,13 @@ def _register_driver(data: dict, context: dict) -> str:
     last = data["last_name"].strip()
     license_number = data["license_number"].strip()
     email = data.get("email", "").strip()
+    phone_number = data.get("phone_number", "").strip()
 
     if not email:
         return "Error: email address is required to register as a driver. Please ask the user for their email."
+
+    if not phone_number:
+        return "Error: phone number is required to register as a driver. Please ask the user for their phone number."
 
     password = _generate_password()
 
@@ -329,6 +336,7 @@ def _register_driver(data: dict, context: dict) -> str:
         first_name=first,
         last_name=last,
         email=email,
+        phone=phone_number,
         role=CustomUser.Role.DRIVER,
         password=password,
     )
@@ -374,7 +382,7 @@ def _post_job(data: dict, context: dict) -> str:
     # Email all available verified drivers
     _email_available_drivers(job)
 
-    rate_line = f"\nAgreed Rate: ${job.agreed_rate}/hr" if job.agreed_rate else ""
+    rate_line = f"\nAgreed Rate: ${job.agreed_rate}/month" if job.agreed_rate else ""
     return (
         f"Job #{job.id} posted successfully.\n"
         f"Type:         {job.get_employment_type_display()}\n"
@@ -397,7 +405,7 @@ def _get_open_jobs(data: dict, context: dict) -> str:
 
     lines = ["Open job engagements:"]
     for j in jobs:
-        rate = f" | Rate: ${j.agreed_rate}/hr" if j.agreed_rate else ""
+        rate = f" | Rate: ${j.agreed_rate}/month" if j.agreed_rate else ""
         lines.append(
             f"  #{j.id} | {j.get_employment_type_display()} | "
             f"{j.work_location}{rate}"
@@ -425,17 +433,24 @@ def _get_or_create_history(user):
 
 
 def _notify_client_of_acceptance(job, driver) -> None:
-    """Push an in-chat notification to the client when a driver accepts their job."""
+    """
+    Notify the client that a driver has accepted their job.
+    Driver contact details are withheld until the client completes salary payment.
+    """
     from .models import ChatMessage
+    from .contract import generate_contract_pdf
 
     client = job.client
+    payment_url = f"http://localhost:8000/chat/pay/{job.id}/"
+    contract_url = f"http://localhost:8000/chat/contract/{job.id}/"
     message = (
         f"Great news! A driver has accepted your job offer.\n"
         f"{'─' * 30}\n"
         f"Job #{job.id} — {job.get_employment_type_display()}\n"
-        f"Location:  {job.work_location}\n"
-        f"Driver:    {driver.get_full_name()}\n\n"
-        f"Your driver will be in touch shortly. You can chat here if you have any questions."
+        f"Location:  {job.work_location}\n\n"
+        f"To receive your driver's contact details, please complete the salary payment:\n"
+        f"{payment_url}\n\n"
+        f"Your employment contract is also ready to download:\n{contract_url}"
     )
 
     history, session_key = _get_or_create_history(client)
@@ -448,6 +463,109 @@ def _notify_client_of_acceptance(job, driver) -> None:
         role=ChatMessage.Role.ASSISTANT,
         body=message,
     )
+
+    # Email the client with PDF contract attached — driver phone still withheld
+    if client.email:
+        from django.core.mail import get_connection, EmailMessage
+        from django.conf import settings
+        import ssl, certifi
+        try:
+            pdf_bytes = generate_contract_pdf(job)
+            connection = get_connection(
+                ssl_context=ssl.create_default_context(cafile=certifi.where())
+            )
+            email = EmailMessage(
+                subject=f"Drivas — A driver has accepted your job (#{job.id})",
+                body=(
+                    f"Hi {client.first_name or client.username},\n\n"
+                    f"Great news! A driver has accepted your job offer on Drivas.\n\n"
+                    f"Job #{job.id}\n"
+                    f"{'─' * 30}\n"
+                    f"Type:      {job.get_employment_type_display()}\n"
+                    f"Location:  {job.work_location}\n\n"
+                    f"To receive your driver's contact details, please complete the salary payment:\n"
+                    f"{payment_url}\n\n"
+                    f"Your employment contract is attached. Both parties should sign and keep a copy.\n\n"
+                    f"Log in to your Drivas chat for updates: http://localhost:8000/chat/\n\n"
+                    f"— The Drivas Team"
+                ),
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                to=[client.email],
+                connection=connection,
+            )
+            email.attach(
+                f"drivas_contract_{job.id}.pdf",
+                pdf_bytes,
+                "application/pdf",
+            )
+            email.send(fail_silently=True)
+        except Exception as exc:
+            logger.error("Failed to email client %s on job acceptance: %s", client.id, exc)
+
+
+def _notify_driver_of_acceptance(job, driver) -> None:
+    """Push an in-chat notification and email (with PDF contract) to the driver after they accept a job."""
+    from .models import ChatMessage
+    from .contract import generate_contract_pdf
+
+    contract_url = f"http://localhost:8000/chat/contract/{job.id}/"
+    message = (
+        f"You have successfully accepted job #{job.id}.\n"
+        f"{'─' * 30}\n"
+        f"Client:    {job.client.get_full_name()}\n"
+        f"Location:  {job.work_location}\n"
+        f"Type:      {job.get_employment_type_display()}\n\n"
+        f"Your employment contract is ready to download:\n{contract_url}\n\n"
+        f"Please report to the work location as agreed. Good luck!"
+    )
+
+    history, session_key = _get_or_create_history(driver)
+    history.append_assistant(message)
+    history.save()
+
+    ChatMessage.objects.create(
+        user=driver,
+        session_key=session_key,
+        role=ChatMessage.Role.ASSISTANT,
+        body=message,
+    )
+
+    # Email the driver with PDF attachment
+    if driver.email:
+        from django.core.mail import get_connection, EmailMessage
+        from django.conf import settings
+        import ssl, certifi
+        try:
+            pdf_bytes = generate_contract_pdf(job)
+            connection = get_connection(
+                ssl_context=ssl.create_default_context(cafile=certifi.where())
+            )
+            email = EmailMessage(
+                subject=f"Drivas — Contract for job #{job.id}",
+                body=(
+                    f"Hi {driver.first_name or driver.username},\n\n"
+                    f"You have accepted a job on Drivas. Here are the details:\n\n"
+                    f"Job #{job.id}\n"
+                    f"{'─' * 30}\n"
+                    f"Client:    {job.client.get_full_name()}\n"
+                    f"Location:  {job.work_location}\n"
+                    f"Type:      {job.get_employment_type_display()}\n\n"
+                    f"Your employment contract is attached. Please sign and keep a copy.\n\n"
+                    f"Log in to your Drivas chat: http://localhost:8000/chat/\n\n"
+                    f"— The Drivas Team"
+                ),
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                to=[driver.email],
+                connection=connection,
+            )
+            email.attach(
+                f"drivas_contract_{job.id}.pdf",
+                pdf_bytes,
+                "application/pdf",
+            )
+            email.send(fail_silently=True)
+        except Exception as exc:
+            logger.error("Failed to email driver %s on job acceptance: %s", driver.id, exc)
 
 
 def _accept_job(data: dict, context: dict) -> str:
@@ -482,8 +600,9 @@ def _accept_job(data: dict, context: dict) -> str:
     profile.save()
     JobStatusLog.objects.create(job=job, status=JobEngagement.Status.HIRED, changed_by=user)
 
-    # Notify the client in their chat
+    # Notify client and send contract to both parties
     _notify_client_of_acceptance(job, user)
+    _notify_driver_of_acceptance(job, user)
 
     return (
         f"Job #{job.id} accepted!\n"
@@ -491,7 +610,7 @@ def _accept_job(data: dict, context: dict) -> str:
         f"Location:     {job.work_location}\n"
         f"Type:         {job.get_employment_type_display()}\n"
         f"Requirements: {job.requirements or 'None'}\n"
-        f"The client has been notified."
+        f"The client has been notified and contracts have been sent to both parties."
     )
 
 
@@ -603,7 +722,7 @@ def _get_job_info(data: dict, context: dict) -> str:
         return "Error: you do not have permission to view this job."
 
     driver_name = job.driver.get_full_name() if job.driver else "Not assigned yet"
-    rate = f"\nAgreed Rate:  ${job.agreed_rate}/hr" if job.agreed_rate else ""
+    rate = f"\nAgreed Rate:  ${job.agreed_rate}/month" if job.agreed_rate else ""
     earned = f"\nTotal Earned: ${job.total_earned}" if job.total_earned else ""
     return (
         f"Job #{job.id}\n"
@@ -676,7 +795,7 @@ def _email_available_drivers(job) -> None:
     from .email_utils import send_job_notification_email
     from .models import ConversationHistory, ChatMessage
 
-    rate_line = f"\nRate:         ${job.agreed_rate}/hr" if job.agreed_rate else ""
+    rate_line = f"\nRate:         ${job.agreed_rate}/month" if job.agreed_rate else ""
     message = (
         f"New job available! Job #{job.id}\n"
         f"{'─' * 24}\n"

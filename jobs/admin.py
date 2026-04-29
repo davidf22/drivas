@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import JobEngagement, JobStatusLog
+from .models import JobEngagement, JobStatusLog, SalaryPayment
 
 
 class JobStatusLogInline(admin.TabularInline):
@@ -24,3 +24,11 @@ class JobEngagementAdmin(admin.ModelAdmin):
 class JobStatusLogAdmin(admin.ModelAdmin):
     list_display = ("job", "status", "changed_by", "timestamp")
     list_filter = ("status",)
+
+
+@admin.register(SalaryPayment)
+class SalaryPaymentAdmin(admin.ModelAdmin):
+    list_display = ("id", "job", "amount", "status", "paid_at", "created_at")
+    list_filter = ("status",)
+    readonly_fields = ("reference", "created_at", "paid_at")
+    search_fields = ("reference", "job__client__username", "job__driver__username")
