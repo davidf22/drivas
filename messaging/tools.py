@@ -441,8 +441,8 @@ def _notify_client_of_acceptance(job, driver) -> None:
     from .contract import generate_contract_pdf
 
     client = job.client
-    payment_url = f"http://localhost:8000/chat/pay/{job.id}/"
-    contract_url = f"http://localhost:8000/chat/contract/{job.id}/"
+    payment_url = f"{settings.SITE_URL}/chat/pay/{job.id}/"
+    contract_url = f"{settings.SITE_URL}/chat/contract/{job.id}/"
     message = (
         f"Great news! A driver has accepted your job offer.\n"
         f"{'─' * 30}\n"
@@ -486,7 +486,7 @@ def _notify_client_of_acceptance(job, driver) -> None:
                     f"To receive your driver's contact details, please complete the salary payment:\n"
                     f"{payment_url}\n\n"
                     f"Your employment contract is attached. Both parties should sign and keep a copy.\n\n"
-                    f"Log in to your Drivas chat for updates: http://localhost:8000/chat/\n\n"
+                    f"Log in to your Drivas chat for updates: {settings.SITE_URL}/chat/\n\n"
                     f"— The Drivas Team"
                 ),
                 from_email=settings.DEFAULT_FROM_EMAIL,
@@ -508,7 +508,7 @@ def _notify_driver_of_acceptance(job, driver) -> None:
     from .models import ChatMessage
     from .contract import generate_contract_pdf
 
-    contract_url = f"http://localhost:8000/chat/contract/{job.id}/"
+    contract_url = f"{settings.SITE_URL}/chat/contract/{job.id}/"
     message = (
         f"You have successfully accepted job #{job.id}.\n"
         f"{'─' * 30}\n"
@@ -551,7 +551,7 @@ def _notify_driver_of_acceptance(job, driver) -> None:
                     f"Location:  {job.work_location}\n"
                     f"Type:      {job.get_employment_type_display()}\n\n"
                     f"Your employment contract is attached. Please sign and keep a copy.\n\n"
-                    f"Log in to your Drivas chat: http://localhost:8000/chat/\n\n"
+                    f"Log in to your Drivas chat: {settings.SITE_URL}/chat/\n\n"
                     f"— The Drivas Team"
                 ),
                 from_email=settings.DEFAULT_FROM_EMAIL,

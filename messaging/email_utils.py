@@ -38,7 +38,7 @@ def send_job_notification_email(driver, job):
         f"Location:     {job.work_location}{rate_line}\n"
         f"Requirements: {job.requirements or 'None'}\n\n"
         f"Log in to your Drivas chat to accept this job:\n"
-        f"http://localhost:8000/chat/\n\n"
+        f"{settings.SITE_URL}/chat/\n\n"
         f"— The Drivas Team"
     )
 

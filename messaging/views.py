@@ -360,7 +360,7 @@ def _notify_salary_paid(payment) -> None:
                     f"Amount: ₦{payment.amount:,.2f}\n"
                     f"From:   {client.get_full_name()}\n"
                     f"Date:   {payment.paid_at.strftime('%B %d, %Y') if payment.paid_at else 'Today'}\n\n"
-                    f"Log in to your Drivas chat: http://localhost:8000/chat/\n\n"
+                    f"Log in to your Drivas chat: {settings.SITE_URL}/chat/\n\n"
                     f"— The Drivas Team"
                 ),
                 from_email=settings.DEFAULT_FROM_EMAIL,
@@ -474,7 +474,7 @@ def upload_license(request):
                                 f"Hi {user.first_name or user.username},\n\n"
                                 f"Your driver's license image has been received and your Drivas account "
                                 f"is now verified. You can log in and start accepting job offers.\n\n"
-                                f"Log in here: http://localhost:8000/chat/\n\n"
+                                f"Log in here: {settings.SITE_URL}/chat/\n\n"
                                 f"— The Drivas Team"
                             ),
                             from_email=dj_settings.DEFAULT_FROM_EMAIL,

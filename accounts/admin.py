@@ -44,7 +44,7 @@ def _notify_driver_verified(driver):
                     f"Hi {driver.first_name or driver.username},\n\n"
                     f"Great news! Your Drivas driver account has been verified.\n"
                     f"You can now log in and accept job offers.\n\n"
-                    f"Log in here: http://localhost:8000/accounts/login/\n\n"
+                    f"Log in here: {settings.SITE_URL}/chat/\n\n"
                     f"— The Drivas Team"
                 ),
                 from_email=settings.DEFAULT_FROM_EMAIL,
