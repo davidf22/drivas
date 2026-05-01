@@ -133,7 +133,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    environment: production
 
     steps:
       - name: Deploy via SSH
@@ -142,26 +141,14 @@ jobs:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ secrets.SSH_PORT || 22 }}
+          port: 22
+          host_key_algorithms: "+ssh-rsa"
           script: |
             set -e
-
             cd /opt/drivas
-
-            # Pull latest image
-            echo "${{ secrets.GITHUB_TOKEN }}" | \
-              docker login ghcr.io -u ${{ github.actor }} --password-stdin
-
-            docker pull ghcr.io/${{ github.repository }}:latest
-
-            # Rolling restart: bring up new containers, remove old ones
-            docker compose pull
+            git pull origin main
+            docker compose build web
             docker compose up -d --remove-orphans
-
-            # Run migrations inside the running web container
             docker compose exec -T web python manage.py migrate --noinput
-
-            # Clean up dangling images
             docker image prune -f
-
             echo "Deployment complete."
