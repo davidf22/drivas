@@ -1,4 +1,4 @@
-# RideConnect
+# Drivas
 
 A Django backend that connects **drivers** with **clients** entirely through **WhatsApp** (via Twilio).  
 No mobile app, no web frontend — every user interaction happens in WhatsApp.
