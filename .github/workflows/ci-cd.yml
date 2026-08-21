@@ -135,6 +135,18 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 
     steps:
+      - name: Debug secret fingerprints (no raw values printed)
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          echo "SSH_HOST length: ${#SSH_HOST}, sha256: $(echo -n "$SSH_HOST" | sha256sum)"
+          echo "SSH_USER length: ${#SSH_USER}, sha256: $(echo -n "$SSH_USER" | sha256sum)"
+          echo "SSH_PRIVATE_KEY length: ${#SSH_PRIVATE_KEY}, line count: $(echo "$SSH_PRIVATE_KEY" | wc -l)"
+          echo "SSH_PRIVATE_KEY first line: $(echo "$SSH_PRIVATE_KEY" | head -1 | sha256sum)"
+          echo "SSH_PRIVATE_KEY last line: $(echo "$SSH_PRIVATE_KEY" | tail -1 | sha256sum)"
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -142,6 +154,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: 22
+          debug: true
           script: |
             set -e
             cd /opt/drivas
