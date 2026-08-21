@@ -128,6 +128,13 @@ SITE_URL = env("SITE_URL", default="http://localhost:8000")
 PAYSTACK_SECRET_KEY = env("PAYSTACK_SECRET_KEY", default="")
 PAYSTACK_PUBLIC_KEY = env("PAYSTACK_PUBLIC_KEY", default="")
 
+# WhatsApp Cloud API (Meta)
+WHATSAPP_TOKEN = env("WHATSAPP_TOKEN", default="")
+WHATSAPP_PHONE_NUMBER_ID = env("WHATSAPP_PHONE_NUMBER_ID", default="")
+WHATSAPP_VERIFY_TOKEN = env("WHATSAPP_VERIFY_TOKEN", default="")
+WHATSAPP_APP_SECRET = env("WHATSAPP_APP_SECRET", default="")
+WHATSAPP_API_VERSION = env("WHATSAPP_API_VERSION", default="v21.0")
+
 # AI / Anthropic
 ANTHROPIC_API_KEY = env("ANTHROPIC_API_KEY", default="")
 AI_MODEL = "claude-opus-4-6"

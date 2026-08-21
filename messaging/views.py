@@ -12,6 +12,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
 from .models import ChatMessage
+from .whatsapp import normalize_phone, send_whatsapp_message, verify_webhook_signature
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +99,46 @@ def poll_messages(request):
     return JsonResponse({"messages": messages})
 
 
+def _run_agent_turn(session_key: str, user, body: str):
+    """
+    Persist the incoming message, run the AI agent, persist the reply.
+
+    Shared by the web chat widget (send_message) and the WhatsApp webhook so both
+    channels write to the same ChatMessage/ConversationHistory tables.
+
+    Returns (reply_text, user) — user may have changed if registration happened this turn.
+    """
+    ChatMessage.objects.create(
+        user=user,
+        session_key=session_key,
+        role=ChatMessage.Role.USER,
+        body=body,
+    )
+
+    from .ai_agent import run_agent
+    try:
+        reply = run_agent(session_key=session_key, user=user, incoming_message=body)
+    except Exception:
+        logger.exception("AI agent failed for session %s", session_key)
+        reply = "Sorry, something went wrong. Please try again or contact support at fayankindavid@gmail.com."
+
+    # Re-fetch user in case registration happened during this turn
+    if user is None:
+        from .models import ConversationHistory
+        history = ConversationHistory.objects.filter(phone_number=session_key).first()
+        if history and history.user:
+            user = history.user
+
+    ChatMessage.objects.create(
+        user=user,
+        session_key=session_key,
+        role=ChatMessage.Role.ASSISTANT,
+        body=reply,
+    )
+
+    return reply, user
+
+
 @require_POST
 def send_message(request):
     """
@@ -120,38 +161,66 @@ def send_message(request):
     session_key = _get_session_key(request)
     user = request.user if request.user.is_authenticated else None
 
-    # Persist user message
-    ChatMessage.objects.create(
-        user=user,
-        session_key=session_key,
-        role=ChatMessage.Role.USER,
-        body=body,
-    )
-
-    # Run AI agent
-    from .ai_agent import run_agent
-    try:
-        reply = run_agent(session_key=session_key, user=user, incoming_message=body)
-    except Exception:
-        logger.exception("AI agent failed for session %s", session_key)
-        reply = "Sorry, something went wrong. Please try again or contact support at fayankindavid@gmail.com."
-
-    # Re-fetch user in case registration happened during this turn
-    if user is None:
-        from .models import ConversationHistory
-        history = ConversationHistory.objects.filter(phone_number=session_key).first()
-        if history and history.user:
-            user = history.user
-
-    # Persist AI reply
-    ChatMessage.objects.create(
-        user=user,
-        session_key=session_key,
-        role=ChatMessage.Role.ASSISTANT,
-        body=reply,
-    )
+    reply, _user = _run_agent_turn(session_key, user, body)
 
     return JsonResponse({"reply": reply})
+
+
+@csrf_exempt
+def whatsapp_webhook(request):
+    """
+    Meta WhatsApp Cloud API webhook.
+
+    GET:  verification handshake (hub.mode / hub.verify_token / hub.challenge).
+    POST: incoming message(s) — run the AI agent and reply over WhatsApp.
+    """
+    if request.method == "GET":
+        if (
+            request.GET.get("hub.mode") == "subscribe"
+            and request.GET.get("hub.verify_token") == settings.WHATSAPP_VERIFY_TOKEN
+        ):
+            return HttpResponse(request.GET.get("hub.challenge", ""), status=200)
+        return HttpResponse(status=403)
+
+    if settings.WHATSAPP_APP_SECRET:
+        signature = request.META.get("HTTP_X_HUB_SIGNATURE_256", "")
+        if not verify_webhook_signature(request.body, signature):
+            logger.warning("WhatsApp webhook signature verification failed")
+            return HttpResponse(status=403)
+
+    try:
+        payload = json.loads(request.body)
+    except json.JSONDecodeError:
+        return HttpResponse(status=400)
+
+    from accounts.models import CustomUser
+
+    for entry in payload.get("entry", []):
+        for change in entry.get("changes", []):
+            value = change.get("value", {})
+            for message in value.get("messages", []):
+                if message.get("type") != "text":
+                    continue
+
+                from_number = normalize_phone(message["from"])
+                text = message["text"]["body"].strip()
+                if not text:
+                    continue
+
+                session_key = f"whatsapp_{from_number}"
+                user = CustomUser.objects.filter(whatsapp_number=from_number).first()
+
+                reply, user = _run_agent_turn(session_key, user, text)
+
+                # Link this phone number to the user so future messages resolve directly,
+                # even if registration happened mid-conversation.
+                if user and not user.whatsapp_number:
+                    user.whatsapp_number = from_number
+                    user.save(update_fields=["whatsapp_number"])
+
+                send_whatsapp_message(from_number, reply)
+
+    return HttpResponse(status=200)
 
 
 # ── Paystack salary payment ───────────────────────────────────────────────────

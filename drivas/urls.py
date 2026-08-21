@@ -5,6 +5,8 @@ from django.conf import settings
 from django.conf.urls.static import static
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
+from messaging import views as messaging_views
+
 urlpatterns = [
     # Django admin
     path("admin/", admin.site.urls),
@@ -12,6 +14,8 @@ urlpatterns = [
     path("accounts/login/", auth_views.LoginView.as_view(template_name="messaging/login.html"), name="login"),
     path("accounts/logout/", auth_views.LogoutView.as_view(next_page="/accounts/login/"), name="logout"),
     path("accounts/", include("accounts.urls")),
+    # WhatsApp Cloud API webhook (public path, no /chat/ prefix)
+    path("whatsapp/webhook/", messaging_views.whatsapp_webhook, name="whatsapp_webhook"),
     # Chat platform
     path("chat/", include("messaging.urls")),
     # REST API
